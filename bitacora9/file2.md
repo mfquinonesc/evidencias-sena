@@ -3,7 +3,7 @@
 El siguiente fragmento de código corresponde a la función que se encarga de guardar los cambios cuando se edtita una orden ya creada.
 
 ```python
-def write(self, vals):
+    def write(self, vals):
         # self.env['mail.message'].create({
         #     'body': "Se actualizo informacion documento",
         #     'model': 'motion.service_orders',
