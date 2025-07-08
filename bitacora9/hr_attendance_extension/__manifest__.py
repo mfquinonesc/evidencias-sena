@@ -7,8 +7,7 @@
     """,
 
     'description': """
-        This module extension tracks and calculates the total hours worked by employees each week.
-        Show a box displaying the total hours worked during the current week.
+        This module extends the attendance odoo module funtionality.
     """,
 
     'author': "AB Comercial S.A.S.",
