@@ -7,7 +7,7 @@ odoo.define('hr_attendance_extension.hr_attendance_extension', function (require
 
     /**
      * Original Odoo attendance client action.
-     * Frontend component responsible for rendering the "Check In / Check Out" screen.
+     * Frontend component responsible for rendering the "Attendances (Check In / Check Out)" screen.
      */
     const originalAttendances = require('hr_attendance.my_attendances');
 
@@ -16,6 +16,11 @@ odoo.define('hr_attendance_extension.hr_attendance_extension', function (require
      * Communicates with Python models from the JavaScript in the frontend.
      */
     const rpc = require('web.rpc');
+
+    /**
+     * Odoo's built-in dialog.
+     */
+    const Dialog = require('web.Dialog');
 
     /**
      * Converts a float number representing hours (e.g., 8.5) into a string in HH:mm format (e.g., "08:30").
@@ -30,6 +35,24 @@ odoo.define('hr_attendance_extension.hr_attendance_extension', function (require
         const paddedMinutes = String(minutes).padStart(2, '0');
         return `${paddedHours}:${paddedMinutes}`;
     }
+
+    /**
+     * Converts a UTC datetime string to "America/Bogota" local time
+     * and formats it as "YYYY-MM-DD HH:MM:SS".
+     *
+     * @param {string} utcString - UTC time, e.g., "2025-07-09 22:36:22"
+     * @returns {string} Local time in Bogotá timezone, 24-hour format
+     */
+    const formatTimeLocal = (utcString) => {
+        const iso = utcString.replace(" ", "T") + "Z";
+        const date = new Date(iso);
+        return date.toLocaleString("en-CA", {
+            timeZone: "America/Bogota",
+            hour12: false,
+            hour: '2-digit',
+            minute: '2-digit',
+        });
+    };
 
     /**
      * Extended Odoo attendance client action.
@@ -49,6 +72,12 @@ odoo.define('hr_attendance_extension.hr_attendance_extension', function (require
          * 2. Makes an RPC call to the `hr.attendance` model's `get_weekly_hours` method.
          * 3. Locates the first available `<h3>` or `<h4>` tag where the employee name is displayed.
          * 4. Appends a Bootstrap-styled info alert below the employee name showing the weekly hours in HH:mm format.
+         * 5. Calls the `getLunchCheckInAttendance` method to check if a future lunch check-in already exists.
+         * 6. Locates the attendance UI container and appends a "Lunch Hour" button.
+         * 7. Disables the button if:
+         *    - The employee is currently checked out, or
+         *    - A lunch check-in already exists.
+         * 8. Binds a click event to the "Lunch Hour" button, which triggers the `setLunchHour` method.
          *
          * @async
          * @returns {Promise<void>} A promise that resolves once the UI has been updated.
@@ -56,19 +85,87 @@ odoo.define('hr_attendance_extension.hr_attendance_extension', function (require
          start: async function () {           
             await this._super.apply(this, arguments);
 
-            const hours = await rpc.query({
+            const hours = await this.getWeeklyHours();
+
+            const container = this.$el.find('h4, h3').first();
+            container.append(`<div id="weekly-hours-box" class="alert alert-info mt-4">
+                Weekly Hours: ${floatToHHMM(hours)} hours
+            </div>`);  
+
+            const attendance = await this.getLunchCheckInAttendance();        
+                
+            const attendanceContainer = this.$el.find('.o_hr_attendance_kiosk_mode');
+
+            const disabled = this.employee.attendance_state == 'checked_out' || attendance;
+                
+            attendanceContainer.append(`
+                <button id="lunch-hour-button" class="btn btn-primary mt-4" ${disabled? 'disabled':''}>
+                    Lunch Hour
+                </button>
+            `);
+
+            this.$el.find('#lunch-hour-button').on('click', this.setLunchHour.bind(this));     
+
+            return Promise.resolve();
+        },
+
+        /**
+         * Registers the user's lunch hour if not already set.
+         *       
+         * @async
+         * @returns {Promise<void>|undefined}
+         */
+        setLunchHour: async function () {   
+
+            const attendance = await this.getLunchCheckInAttendance();
+            if(attendance)             
+                return            
+
+            if(this.employee.attendance_state == 'checked_in'){
+
+                const checks = await rpc.query({
+                    model: 'hr.attendance',
+                    method: 'set_lunch_hour',
+                    args: [],
+                });                
+                
+                Dialog.alert(this, `Lunch hour was set from ${formatTimeLocal(checks.check_out)} to ${formatTimeLocal(checks.check_in)}.`);
+               
+                this.$el.find('#lunch-hour-button').prop('disabled', true);
+                
+                const hours = await this.getWeeklyHours();
+
+                this.$el.find('#weekly-hours-box').html(`Weekly Hours: ${floatToHHMM(hours)} hours`);
+            }                
+        },
+
+        /**
+         * Retrieves the next lunch check-in attendance for the current user.        
+         *
+         * @async
+         * @returns {Promise<Object|null>} A promise that resolves to the lunch attendance record 
+         * or undefined if no lunch check-in is found.
+         */
+        getLunchCheckInAttendance: async function() {
+            return await rpc.query({
+                model: 'hr.attendance',
+                method: 'get_lunch_check_in',
+                args: [],
+            });
+        },
+
+        /**
+         * Fetches the total weekly worked hours for the current user.
+         *
+         * @returns {Promise<number>} Weekly worked hours.
+         */
+        getWeeklyHours: async function () {
+            return await rpc.query({
                 model: 'hr.attendance',
                 method: 'get_weekly_hours',
                 args: [],
             });
-
-            const container = this.$el.find('h4, h3').first();
-            container.append(`<div class="alert alert-info mt-2">
-                Weekly Hours: ${floatToHHMM(hours)} hours
-            </div>`);  
-
-            return Promise.resolve();
-        },
+        }
     });
 
     return attendanceExtension;

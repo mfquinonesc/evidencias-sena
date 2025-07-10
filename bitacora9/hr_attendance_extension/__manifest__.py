@@ -1,11 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': "hr_attendance_extension",
-
-    'summary': """
-        This module extension tracks and calculates the total hours worked by employees each week.      
-    """,
-
+    
     'description': """
         This module extends the attendance odoo module funtionality.
     """,
